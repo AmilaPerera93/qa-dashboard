@@ -163,7 +163,7 @@ const Dashboard = ({ user, onLogout, appState }) => {
     const [timeline, setTimeline] = useState({ id: '', data: [] });
     const [imagePreview, setImagePreview] = useState(null);
 
-    const showMessage = (message) => setModal({ show: true, message });
+    const showMessage = useCallback((message) => setModal({ show: true, message }), [setModal]);
     const handleInputChange = (e) => setInputs(prev => ({ ...prev, [e.target.id]: e.target.value }));
 
     const displayTimeline = useCallback(() => {
@@ -172,7 +172,7 @@ const Dashboard = ({ user, onLogout, appState }) => {
         const chain = blockchain[batchId];
         const data = (chain && chain.length > 1) ? chain.slice(1) : [];
         setTimeline({ id: batchId, data });
-    }, [inputs.verifyBatchId, blockchain, setModal]);
+    }, [inputs.verifyBatchId, blockchain, showMessage]);
 
     const createGenesisBlock = async (batchId) => {
         if (!blockchain[batchId]) {
