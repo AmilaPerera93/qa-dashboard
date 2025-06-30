@@ -5,13 +5,21 @@ import { getFirestore, collection, addDoc, onSnapshot, query, where, doc, update
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 
 // --- Firebase Configuration ---
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+// These variables are placeholders and will be provided by the environment.
+const firebaseConfig = typeof __firebase_config !== 'undefined' && __firebase_config ? JSON.parse(__firebase_config) : {};
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const auth = getAuth(app);
+let app;
+let db;
+let auth;
+
+// Only initialize if config is valid to prevent errors
+if (firebaseConfig.apiKey) {
+    app = initializeApp(firebaseConfig);
+    db = getFirestore(app);
+    auth = getAuth(app);
+}
 
 
 // --- MOCK DATA & CONFIGURATION ---
@@ -146,6 +154,7 @@ export default function App() {
   const [reportToView, setReportToView] = useState(null);
 
   useEffect(() => {
+    if (!auth) return;
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!user) {
         try {
@@ -169,20 +178,62 @@ export default function App() {
       setView('viewReport');
   };
 
+  const handleAddAssignment = async (newAssignment) => {
+    if (!db || appId === 'default-app-id') {
+        alert("Database is not configured correctly.");
+        return;
+    }
+    try {
+        await addDoc(collection(db, `/artifacts/${appId}/public/data/reports`), newAssignment);
+        setView('dashboard');
+    } catch (error) {
+        console.error("Error creating assignment:", error);
+        alert("Failed to create assignment.");
+    }
+  };
+
+  const handleUpdateAssignment = async (assignmentId, checklist) => {
+    if (!db || appId === 'default-app-id') {
+        alert("Database is not configured correctly.");
+        return;
+    }
+    const reportRef = doc(db, `/artifacts/${appId}/public/data/reports`, assignmentId);
+    try {
+        await updateDoc(reportRef, {
+            checklist,
+            status: 'complete',
+            submittedAt: new Date().toISOString()
+        });
+        setView('dashboard');
+    } catch (error) {
+        console.error("Error submitting report:", error);
+        alert("Failed to submit report.");
+    }
+  };
+
   const renderContent = () => {
+    if (!firebaseConfig.apiKey) {
+      return (
+        <div className="text-center p-10 bg-white rounded-lg shadow-md">
+            <h2 className="text-xl font-semibold text-red-600">Configuration Error</h2>
+            <p className="text-slate-600 mt-2">Firebase configuration is missing. Please check your setup.</p>
+        </div>
+      );
+    }
+      
     if (!isAuthReady) {
-      return <div className="text-center p-10">Initializing...</div>;
+        return <div className="text-center p-10">Authenticating...</div>
     }
 
     switch (view) {
       case 'dashboard':
         return <MyDashboard currentUser={currentUser} onPerformAssignment={handlePerformAssignment} setView={setView} />;
       case 'createAssignment':
-        return <CreateAssignment setView={setView} />;
+        return <CreateAssignment onAddAssignment={handleAddAssignment} setView={setView} />;
       case 'allReports':
         return <ReportsDashboard onViewReport={handleViewReport} />;
       case 'performTest':
-        return <PerformTest assignment={assignmentToPerform} setView={setView} />;
+        return <PerformTest assignment={assignmentToPerform} onUpdateAssignment={handleUpdateAssignment} setView={setView} />;
       case 'viewReport':
         return <ReportView report={reportToView} onBack={() => setView('allReports')} />;
       default:
@@ -266,6 +317,7 @@ const MyDashboard = ({ currentUser, onPerformAssignment, setView }) => {
     const [assignments, setAssignments] = useState([]);
     
     useEffect(() => {
+        if (!db || appId === 'default-app-id') return;
         const assignmentsQuery = query(
             collection(db, `/artifacts/${appId}/public/data/reports`),
             where('status', '==', 'pending'),
@@ -275,6 +327,8 @@ const MyDashboard = ({ currentUser, onPerformAssignment, setView }) => {
         const unsubscribe = onSnapshot(assignmentsQuery, (snapshot) => {
             const fetchedAssignments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             setAssignments(fetchedAssignments);
+        }, (error) => {
+            console.error("Error fetching assignments: ", error);
         });
 
         return () => unsubscribe();
@@ -310,7 +364,7 @@ const MyDashboard = ({ currentUser, onPerformAssignment, setView }) => {
     );
 };
 
-const CreateAssignment = ({ setView }) => {
+const CreateAssignment = ({ onAddAssignment, setView }) => {
     const [details, setDetails] = useState({ name: '', url: '', assignedTo: '', environment: '' });
     
     const handleCreate = async () => {
@@ -325,19 +379,12 @@ const CreateAssignment = ({ setView }) => {
             status: 'pending',
             createdAt: new Date().toISOString()
         };
-
-        try {
-            await addDoc(collection(db, `/artifacts/${appId}/public/data/reports`), newAssignment);
-            setView('dashboard');
-        } catch (error) {
-            console.error("Error creating assignment:", error);
-            alert("Failed to create assignment.");
-        }
+        onAddAssignment(newAssignment);
     };
     
     return (
         <div className="space-y-6">
-             <button onClick={() => setView('dashboard')} className="flex items-center text-sm font-semibold text-slate-600 hover:text-violet-700">
+            <button onClick={() => setView('dashboard')} className="flex items-center text-sm font-semibold text-slate-600 hover:text-violet-700">
                 <ArrowLeft className="w-4 h-4 mr-1" />
                 Back to Dashboard
             </button>
@@ -349,7 +396,7 @@ const CreateAssignment = ({ setView }) => {
     );
 };
 
-const PerformTest = ({ assignment, setView }) => {
+const PerformTest = ({ assignment, onUpdateAssignment, setView }) => {
     const [checklist, setChecklist] = useState(assignment.checklist);
     const [activePhase, setActivePhase] = useState(Object.keys(checklistData)[0]);
 
@@ -363,18 +410,7 @@ const PerformTest = ({ assignment, setView }) => {
     };
 
     const handleSubmit = async () => {
-        const reportRef = doc(db, `/artifacts/${appId}/public/data/reports`, assignment.id);
-        try {
-            await updateDoc(reportRef, {
-                checklist,
-                status: 'complete',
-                submittedAt: new Date().toISOString()
-            });
-            setView('dashboard');
-        } catch (error) {
-            console.error("Error submitting report:", error);
-            alert("Failed to submit report.");
-        }
+        onUpdateAssignment(assignment.id, checklist);
     };
 
     return (
@@ -622,6 +658,7 @@ const ReportsDashboard = ({ onViewReport }) => {
     const [completedReports, setCompletedReports] = useState([]);
 
     useEffect(() => {
+        if (!db || appId === 'default-app-id') return;
         const reportsQuery = query(
             collection(db, `/artifacts/${appId}/public/data/reports`),
             where('status', '==', 'complete')
