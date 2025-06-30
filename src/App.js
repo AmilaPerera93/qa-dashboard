@@ -1,5 +1,18 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { FileText, Link, User, Server, Shield, Zap, DatabaseZap, Accessibility, BarChart, CheckSquare, List, DollarSign, Puzzle, Briefcase, FileCheck, FileX, Clock, ArrowLeft } from 'lucide-react';
+import { FileText, Link, User, Server, Shield, Zap, DatabaseZap, Accessibility, BarChart, CheckSquare, List, DollarSign, Puzzle, Briefcase, FileCheck, FileX, Clock, ArrowLeft, PlusCircle, LogIn } from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, addDoc, onSnapshot, query, where, doc, updateDoc } from 'firebase/firestore';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+
+// --- Firebase Configuration ---
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+
 
 // --- MOCK DATA & CONFIGURATION ---
 
@@ -12,10 +25,12 @@ const checklistData = {
     icon: Shield,
     subtitle: 'Vulnerabilities & protection.',
     items: [
-      { text: 'Scan for malware, viruses, and vulnerabilities.', notes: 'e.g., Wordfence, Sucuri' },
-      { text: 'Update and enforce strong password policies.', notes: '' },
-      { text: 'Check for XSS, CSRF, and SQL injection vulnerabilities.', notes: '' },
-      { text: 'Implement security headers (CSP, HSTS, X-Frame-Options).', notes: '' },
+      { text: 'Scan for malware, viruses, and other vulnerabilities in the code and database.', notes: '' },
+      { text: 'Update and enforce strong password policies for all user accounts, including administrators.', notes: '' },
+      { text: 'Check for Cross-Site Scripting (XSS) and Cross-Site Request Forgery (CSRF) vulnerabilities.', notes: '' },
+      { text: 'Check for SQL injection vulnerabilities in all database queries.', notes: '' },
+      { text: 'Check for insecure direct object references (IDOR).', notes: '' },
+      { text: 'Implement security headers such as Content Security Policy (CSP), HTTP Strict Transport Security (HSTS), and X-Frame-Options.', notes: '' },
       { text: 'Review and secure user access roles and permissions.', notes: '' },
     ],
   },
@@ -124,52 +139,54 @@ const GlobalStyles = () => (
 // --- MAIN APP COMPONENT ---
 
 export default function App() {
-  const [view, setView] = useState('checklist');
-  const [reports, setReports] = useState([]);
+  const [view, setView] = useState('dashboard');
+  const [currentUser, setCurrentUser] = useState(employees[0]);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [assignmentToPerform, setAssignmentToPerform] = useState(null);
   const [reportToView, setReportToView] = useState(null);
 
   useEffect(() => {
-    try {
-      const storedReports = JSON.parse(localStorage.getItem('qa_reports') || '[]');
-      setReports(storedReports);
-    } catch (error) {
-      console.error("Failed to parse reports from localStorage", error);
-      setReports([]);
-    }
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        try {
+          await signInAnonymously(auth);
+        } catch (error) {
+          console.error("Anonymous sign-in failed", error);
+        }
+      }
+      setIsAuthReady(true);
+    });
+    return () => unsubscribe();
   }, []);
-
-  const handleAddReport = (newReport) => {
-    const updatedReports = [newReport, ...reports];
-    setReports(updatedReports);
-    localStorage.setItem('qa_reports', JSON.stringify(updatedReports));
-    setView('reports');
-  };
-
-  const handleCreateNewTest = () => {
-    setReportToView(null);
-    setView('checklist');
-  };
   
-  const handleViewReport = (report) => {
-    setReportToView(report);
-    setView('viewReport');
-  }
+  const handlePerformAssignment = (assignment) => {
+    setAssignmentToPerform(assignment);
+    setView('performTest');
+  };
 
-  const handleBackToReports = () => {
-    setReportToView(null);
-    setView('reports');
+  const handleViewReport = (report) => {
+      setReportToView(report);
+      setView('viewReport');
   };
 
   const renderContent = () => {
+    if (!isAuthReady) {
+      return <div className="text-center p-10">Initializing...</div>;
+    }
+
     switch (view) {
-      case 'checklist':
-        return <ChecklistDashboard onReportSubmit={handleAddReport} />;
-      case 'reports':
-        return <ReportsDashboard reports={reports} onViewReport={handleViewReport} onCreateNew={handleCreateNewTest} />;
+      case 'dashboard':
+        return <MyDashboard currentUser={currentUser} onPerformAssignment={handlePerformAssignment} setView={setView} />;
+      case 'createAssignment':
+        return <CreateAssignment setView={setView} />;
+      case 'allReports':
+        return <ReportsDashboard onViewReport={handleViewReport} />;
+      case 'performTest':
+        return <PerformTest assignment={assignmentToPerform} setView={setView} />;
       case 'viewReport':
-        return <ReportView report={reportToView} onBack={handleBackToReports} />;
+        return <ReportView report={reportToView} onBack={() => setView('allReports')} />;
       default:
-        return <ChecklistDashboard onReportSubmit={handleAddReport} />;
+        return <div>Not Found</div>;
     }
   };
 
@@ -177,11 +194,8 @@ export default function App() {
     <div className="bg-slate-50 min-h-screen font-sans text-slate-800 p-4 sm:p-6 lg:p-8">
       <GlobalStyles />
       <div className="max-w-7xl mx-auto">
-        <Header 
-          activeView={view} 
-          onSetView={setView} 
-          onCreateNew={handleCreateNewTest}
-        />
+        <CurrentUserSelector currentUser={currentUser} setCurrentUser={setCurrentUser} />
+        <Header activeView={view} onSetView={setView} />
         <main className="fade-in">
          {renderContent()}
         </main>
@@ -193,14 +207,30 @@ export default function App() {
 
 // --- UI COMPONENTS ---
 
-const Header = ({ activeView, onSetView, onCreateNew }) => {
-  const isChecklistActive = activeView === 'checklist';
-  const isReportsActive = activeView === 'reports' || activeView === 'viewReport';
+const CurrentUserSelector = ({ currentUser, setCurrentUser }) => (
+    <div className="flex justify-end mb-4">
+        <div className="flex items-center space-x-2 bg-white p-2 rounded-lg shadow-sm border border-slate-200">
+            <LogIn className="w-5 h-5 text-slate-500" />
+            <span className="text-sm font-medium">Logged in as:</span>
+            <select
+                value={currentUser}
+                onChange={e => setCurrentUser(e.target.value)}
+                className="font-semibold text-violet-600 border-none bg-transparent focus:ring-0"
+            >
+                {employees.map(e => <option key={e} value={e}>{e}</option>)}
+            </select>
+        </div>
+    </div>
+);
 
-  return (
+
+const Header = ({ activeView, onSetView }) => {
+    const isDashboardActive = activeView === 'dashboard' || activeView === 'createAssignment' || activeView === 'performTest';
+    const isReportsActive = activeView === 'allReports' || activeView === 'viewReport';
+
+    return (
     <div className="bg-white p-4 rounded-xl shadow-lg shadow-slate-200/60 flex flex-col sm:flex-row justify-between items-center mb-8">
       <div className="flex items-center">
-        {/* Replace this placeholder URL with a direct link to your hosted logo image */}
         <img 
             src="https://placehold.co/120x50/003366/FFFFFF?text=AIT" 
             alt="AIT Services Logo" 
@@ -216,13 +246,13 @@ const Header = ({ activeView, onSetView, onCreateNew }) => {
       </div>
       <div className="flex items-center space-x-2 mt-4 sm:mt-0">
         <button 
-          onClick={onCreateNew}
-          className={`flex items-center px-4 py-2 rounded-lg font-semibold transition-all duration-300 transform hover:scale-105 ${isChecklistActive ? 'bg-violet-600 text-white shadow-lg shadow-violet-200' : 'bg-white text-slate-600 hover:bg-violet-50 border border-slate-200'}`}
+          onClick={() => onSetView('dashboard')}
+          className={`flex items-center px-4 py-2 rounded-lg font-semibold transition-all duration-300 transform hover:scale-105 ${isDashboardActive ? 'bg-violet-600 text-white shadow-lg shadow-violet-200' : 'bg-white text-slate-600 hover:bg-violet-50 border border-slate-200'}`}
         >
-          <CheckSquare className="w-5 h-5 mr-2" /> Checklist
+          <User className="w-5 h-5 mr-2" /> My Dashboard
         </button>
         <button 
-          onClick={() => onSetView('reports')}
+          onClick={() => onSetView('allReports')}
           className={`flex items-center px-4 py-2 rounded-lg font-semibold transition-all duration-300 transform hover:scale-105 ${isReportsActive ? 'bg-violet-600 text-white shadow-lg shadow-violet-200' : 'bg-white text-slate-600 hover:bg-violet-50 border border-slate-200'}`}
         >
           <List className="w-5 h-5 mr-2" /> All Reports
@@ -232,83 +262,138 @@ const Header = ({ activeView, onSetView, onCreateNew }) => {
   );
 };
 
-const ChecklistDashboard = ({ onReportSubmit }) => {
-  const [activePhase, setActivePhase] = useState(Object.keys(checklistData)[0]);
-  const [details, setDetails] = useState({ name: '', url: '', assignedTo: '', environment: '' });
-  const [checklist, setChecklist] = useState(JSON.parse(JSON.stringify(initialChecklistState)));
+const MyDashboard = ({ currentUser, onPerformAssignment, setView }) => {
+    const [assignments, setAssignments] = useState([]);
+    
+    useEffect(() => {
+        const assignmentsQuery = query(
+            collection(db, `/artifacts/${appId}/public/data/reports`),
+            where('status', '==', 'pending'),
+            where('details.assignedTo', '==', currentUser)
+        );
 
-  const handleDetailChange = (field, value) => {
-    setDetails(prev => ({ ...prev, [field]: value }));
-  };
+        const unsubscribe = onSnapshot(assignmentsQuery, (snapshot) => {
+            const fetchedAssignments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setAssignments(fetchedAssignments);
+        });
 
-  const handleChecklistChange = (phase, index, field, value) => {
-    const newChecklist = { ...checklist };
-    newChecklist[phase][index][field] = value;
-    setChecklist(newChecklist);
-  };
-  
-  const handleSubmit = () => {
-     if (!details.name || !details.url || !details.assignedTo) {
-      alert('Please fill out Project Name, URL, and Assigned To fields.');
-      return;
-    }
-    const report = {
-      id: Date.now(),
-      details,
-      checklist,
-      submittedAt: new Date().toISOString()
-    };
-    onReportSubmit(report);
-  };
-
-  return (
-    <div className="space-y-6">
-      <ProjectDetailsCard details={details} onChange={handleDetailChange} isReadOnly={false} title="New QA Report Details"/>
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        <QAPhasesNav activePhase={activePhase} setActivePhase={setActivePhase} />
-        <ChecklistPanel
-          phase={activePhase}
-          items={checklist[activePhase]}
-          onChange={handleChecklistChange}
-          isReadOnly={false}
-        />
-      </div>
-       <SubmissionProgress checklist={checklist} onSubmit={handleSubmit} />
-    </div>
-  );
-};
-
-const SubmissionProgress = ({ checklist, onSubmit }) => {
-    const progress = useMemo(() => {
-        const allItems = Object.values(checklist).flat();
-        if (!allItems.length) return 0;
-        
-        const completedItems = allItems.filter(
-            item => item.status === 'Pass' || item.status === 'Fail'
-        ).length;
-        
-        return Math.round((completedItems / allItems.length) * 100);
-    }, [checklist]);
+        return () => unsubscribe();
+    }, [currentUser]);
 
     return (
-         <div className="bg-white p-4 rounded-xl shadow-lg shadow-slate-200/50 border border-slate-200 mt-8 flex flex-col sm:flex-row justify-between items-center sticky bottom-4">
-            <div className="flex-grow mr-6 w-full sm:w-auto mb-4 sm:mb-0">
-                <h3 className="font-semibold text-slate-700">Overall Progress ({progress}%)</h3>
-                <div className="w-full bg-slate-200 rounded-full h-2.5 mt-1">
-                    <div className="bg-violet-600 h-2.5 rounded-full transition-all duration-500" style={{ width: `${progress}%` }}></div>
-                </div>
+        <div className="bg-white p-6 rounded-xl shadow-lg shadow-slate-200/50 border border-slate-200">
+            <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold">Your Pending QA Assignments</h2>
+                <button onClick={() => setView('createAssignment')} className="flex items-center px-4 py-2 bg-violet-600 text-white font-semibold rounded-lg shadow-md hover:bg-violet-700 transition-all">
+                    <PlusCircle className="w-5 h-5 mr-2" />
+                    Create Assignment
+                </button>
             </div>
-            <button 
-                onClick={onSubmit} 
-                className="flex items-center justify-center w-full sm:w-auto px-5 py-3 bg-green-500 text-white font-bold rounded-lg shadow-md shadow-green-200 hover:bg-green-600 transition-all transform hover:scale-105 whitespace-nowrap"
-            >
-                <CheckSquare className="w-5 h-5 mr-2" />
-                Finalize & Save Report
-            </button>
+            {assignments.length > 0 ? (
+                <div className="space-y-3">
+                    {assignments.map(assign => (
+                        <div key={assign.id} className="p-4 border border-slate-200 rounded-lg flex justify-between items-center hover:bg-slate-50 transition-colors">
+                            <div>
+                                <p className="font-semibold text-violet-700">{assign.details.name}</p>
+                                <p className="text-sm text-slate-500">{new Date(assign.createdAt).toLocaleDateString()}</p>
+                            </div>
+                            <button onClick={() => onPerformAssignment(assign)} className="px-4 py-1.5 bg-green-500 text-white text-sm font-semibold rounded-lg hover:bg-green-600">
+                                Start Test
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <p className="text-slate-500 text-center py-8">You have no pending assignments. Great job!</p>
+            )}
         </div>
     );
 };
 
+const CreateAssignment = ({ setView }) => {
+    const [details, setDetails] = useState({ name: '', url: '', assignedTo: '', environment: '' });
+    
+    const handleCreate = async () => {
+        if (!details.name || !details.url || !details.assignedTo) {
+          alert('Please fill out all fields.');
+          return;
+        }
+
+        const newAssignment = {
+            details,
+            checklist: initialChecklistState,
+            status: 'pending',
+            createdAt: new Date().toISOString()
+        };
+
+        try {
+            await addDoc(collection(db, `/artifacts/${appId}/public/data/reports`), newAssignment);
+            setView('dashboard');
+        } catch (error) {
+            console.error("Error creating assignment:", error);
+            alert("Failed to create assignment.");
+        }
+    };
+    
+    return (
+        <div className="space-y-6">
+             <button onClick={() => setView('dashboard')} className="flex items-center text-sm font-semibold text-slate-600 hover:text-violet-700">
+                <ArrowLeft className="w-4 h-4 mr-1" />
+                Back to Dashboard
+            </button>
+            <ProjectDetailsCard details={details} onChange={(field, value) => setDetails(prev => ({ ...prev, [field]: value }))} isReadOnly={false} title="Create New QA Assignment" />
+            <div className="flex justify-end">
+                <button onClick={handleCreate} className="px-6 py-3 bg-violet-600 text-white font-semibold rounded-lg shadow-md hover:bg-violet-700">Create Assignment</button>
+            </div>
+        </div>
+    );
+};
+
+const PerformTest = ({ assignment, setView }) => {
+    const [checklist, setChecklist] = useState(assignment.checklist);
+    const [activePhase, setActivePhase] = useState(Object.keys(checklistData)[0]);
+
+
+    const handleChecklistChange = (phase, index, field, value) => {
+        setChecklist(prev => {
+            const newChecklist = { ...prev };
+            newChecklist[phase][index][field] = value;
+            return newChecklist;
+        });
+    };
+
+    const handleSubmit = async () => {
+        const reportRef = doc(db, `/artifacts/${appId}/public/data/reports`, assignment.id);
+        try {
+            await updateDoc(reportRef, {
+                checklist,
+                status: 'complete',
+                submittedAt: new Date().toISOString()
+            });
+            setView('dashboard');
+        } catch (error) {
+            console.error("Error submitting report:", error);
+            alert("Failed to submit report.");
+        }
+    };
+
+    return (
+        <div className="space-y-6">
+             <button onClick={() => setView('dashboard')} className="flex items-center text-sm font-semibold text-slate-600 hover:text-violet-700">
+                <ArrowLeft className="w-4 h-4 mr-1" />
+                Back to Dashboard
+            </button>
+            <ProjectDetailsCard details={assignment.details} onChange={() => {}} isReadOnly={true} title="Performing QA Test"/>
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                <QAPhasesNav activePhase={activePhase} setActivePhase={setActivePhase} />
+                <div className="lg:col-span-3">
+                   <ChecklistPanel phase={activePhase} items={checklist[activePhase]} onChange={handleChecklistChange} isReadOnly={false} />
+                </div>
+            </div>
+            <SubmissionProgress checklist={checklist} onSubmit={handleSubmit} />
+        </div>
+    );
+};
 
 const ReportView = ({ report, onBack }) => {
   const [activePhase, setActivePhase] = useState(Object.keys(checklistData)[0]);
@@ -381,18 +466,6 @@ const ReportHeader = ({ report }) => {
     );
 };
 
-const ProjectDetailsCard = ({ details, onChange, isReadOnly, title }) => (
-  <div className="bg-white p-6 rounded-xl shadow-lg shadow-slate-200/50 border border-slate-200">
-    <h2 className="text-xl font-semibold mb-4">{title}</h2>
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-      <InputField label="Project Name" icon={FileText} value={details.name} onChange={e => onChange('name', e.target.value)} placeholder="New Website Launch" isReadOnly={isReadOnly}/>
-      <InputField label="Project URL" icon={Link} value={details.url} onChange={e => onChange('url', e.target.value)} placeholder="https://example.com" isReadOnly={isReadOnly}/>
-      <SelectField label="Assigned To" icon={User} value={details.assignedTo} onChange={e => onChange('assignedTo', e.target.value)} options={employees} isReadOnly={isReadOnly}/>
-      <InputField label="Testing Environment" icon={Server} value={details.environment} onChange={e => onChange('environment', e.target.value)} placeholder="Chrome Desktop 125" isReadOnly={isReadOnly}/>
-    </div>
-  </div>
-);
-
 const ReportSummaryCard = ({ checklist }) => {
     const stats = useMemo(() => {
         const allItems = Object.values(checklist).flat();
@@ -400,8 +473,7 @@ const ReportSummaryCard = ({ checklist }) => {
         const passed = allItems.filter(i => i.status === 'Pass').length;
         const failed = allItems.filter(i => i.status === 'Fail').length;
         const na = allItems.filter(i => i.status === 'N/A').length;
-        const completion = total > 0 ? ((passed + failed) / total) * 100 : 0;
-        return { total, passed, failed, na, completion };
+        return { total, passed, failed, na };
     }, [checklist]);
 
     return (
@@ -426,6 +498,45 @@ const SummaryStat = ({ icon: Icon, value, label, color }) => (
 );
 
 
+const SubmissionProgress = ({ checklist, onSubmit }) => {
+    const progress = useMemo(() => {
+        const allItems = Object.values(checklist).flat();
+        if (!allItems.length) return 0;
+        const completedItems = allItems.filter(item => item.status === 'Pass' || item.status === 'Fail').length;
+        return Math.round((completedItems / allItems.length) * 100);
+    }, [checklist]);
+
+    return (
+         <div className="bg-white p-4 rounded-xl shadow-lg shadow-slate-200/50 border border-slate-200 mt-8 flex flex-col sm:flex-row justify-between items-center sticky bottom-4">
+            <div className="flex-grow mr-6 w-full sm:w-auto mb-4 sm:mb-0">
+                <h3 className="font-semibold text-slate-700">Overall Progress ({progress}%)</h3>
+                <div className="w-full bg-slate-200 rounded-full h-2.5 mt-1">
+                    <div className="bg-violet-600 h-2.5 rounded-full transition-all duration-500" style={{ width: `${progress}%` }}></div>
+                </div>
+            </div>
+            <button 
+                onClick={onSubmit} 
+                className="flex items-center justify-center w-full sm:w-auto px-5 py-3 bg-green-500 text-white font-bold rounded-lg shadow-md shadow-green-200 hover:bg-green-600 transition-all transform hover:scale-105 whitespace-nowrap"
+            >
+                <CheckSquare className="w-5 h-5 mr-2" />
+                Finalize & Save Report
+            </button>
+        </div>
+    );
+};
+
+const ProjectDetailsCard = ({ details, onChange, isReadOnly, title }) => (
+  <div className="bg-white p-6 rounded-xl shadow-lg shadow-slate-200/50 border border-slate-200">
+    <h2 className="text-xl font-semibold mb-4">{title}</h2>
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <InputField label="Project Name" icon={FileText} value={details.name} onChange={e => onChange('name', e.target.value)} placeholder="New Website Launch" isReadOnly={isReadOnly}/>
+      <InputField label="Project URL" icon={Link} value={details.url} onChange={e => onChange('url', e.target.value)} placeholder="https://example.com" isReadOnly={isReadOnly}/>
+      <SelectField label="Assigned To" icon={User} value={details.assignedTo} onChange={e => onChange('assignedTo', e.target.value)} options={employees} isReadOnly={isReadOnly}/>
+      <InputField label="Testing Environment" icon={Server} value={details.environment} onChange={e => onChange('environment', e.target.value)} placeholder="Chrome Desktop 125" isReadOnly={isReadOnly}/>
+    </div>
+  </div>
+);
+
 const InputField = ({ label, icon: Icon, isReadOnly, ...props }) => (
   <div>
     <label className="block text-sm font-medium text-slate-600 mb-1">{label}</label>
@@ -448,6 +559,7 @@ const SelectField = ({ label, icon: Icon, value, onChange, options, isReadOnly }
     </div>
   </div>
 );
+
 
 const QAPhasesNav = ({ activePhase, setActivePhase }) => (
   <div className="lg:col-span-1 bg-white p-4 rounded-xl shadow-lg shadow-slate-200/50 border border-slate-200 h-fit">
@@ -506,55 +618,69 @@ const ChecklistPanel = ({ phase, items, onChange, isReadOnly }) => (
   </div>
 );
 
-const ReportsDashboard = ({ reports, onViewReport, onCreateNew }) => {
-  if (reports.length === 0) {
-    return (
-      <div className="text-center bg-white p-10 rounded-xl shadow-lg shadow-slate-200/50 border border-slate-200">
-        <h2 className="text-xl font-semibold">No Reports Found</h2>
-        <p className="text-slate-500 mt-2">Get started by creating your first QA report.</p>
-        <button onClick={onCreateNew} className="mt-4 px-5 py-2 bg-violet-600 text-white font-semibold rounded-lg shadow-md hover:bg-violet-700 transition-all">
-          Create New Test
-        </button>
-      </div>
-    )
-  }
+const ReportsDashboard = ({ onViewReport }) => {
+    const [completedReports, setCompletedReports] = useState([]);
 
-  return (
-    <div className="bg-white p-6 rounded-xl shadow-lg shadow-slate-200/50 border border-slate-200">
-      <h2 className="text-xl font-semibold mb-4">Submitted Reports</h2>
-      <div className="overflow-x-auto">
-        <table className="w-full text-left">
-          <thead className="border-b-2 border-slate-200">
-            <tr>
-              <th className="p-3 text-sm font-semibold text-slate-600">Project Name</th>
-              <th className="p-3 text-sm font-semibold text-slate-600">Assigned To</th>
-              <th className="p-3 text-sm font-semibold text-slate-600">Submitted At</th>
-              <th className="p-3 text-sm font-semibold text-slate-600">Status</th>
-              <th className="p-3 text-sm font-semibold text-slate-600"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {reports.map(report => {
-              const allItems = Object.values(report.checklist).flat();
-              const passedCount = allItems.filter(i => i.status === 'Pass').length;
-              const failedCount = allItems.filter(i => i.status === 'Fail').length;
-              return (
-                <tr key={report.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                  <td className="p-3 font-medium">{report.details.name}</td>
-                  <td className="p-3 text-slate-600">{report.details.assignedTo}</td>
-                  <td className="p-3 text-slate-600">{new Date(report.submittedAt).toLocaleDateString()}</td>
-                  <td className="p-3">
-                    <span className="text-green-600 font-medium">{passedCount} Passed</span>, <span className="text-red-600 font-medium">{failedCount} Failed</span>
-                  </td>
-                  <td className="p-3 text-right">
-                    <button onClick={() => onViewReport(report)} className="font-semibold text-violet-600 hover:text-violet-800">View</button>
-                  </td>
+    useEffect(() => {
+        const reportsQuery = query(
+            collection(db, `/artifacts/${appId}/public/data/reports`),
+            where('status', '==', 'complete')
+        );
+
+        const unsubscribe = onSnapshot(reportsQuery, (snapshot) => {
+            const fetchedReports = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            fetchedReports.sort((a,b) => new Date(b.submittedAt) - new Date(a.submittedAt));
+            setCompletedReports(fetchedReports);
+        });
+
+        return () => unsubscribe();
+    }, []);
+
+    if (completedReports.length === 0) {
+        return (
+        <div className="text-center bg-white p-10 rounded-xl shadow-lg shadow-slate-200/50 border border-slate-200">
+            <h2 className="text-xl font-semibold">No Completed Reports Found</h2>
+            <p className="text-slate-500 mt-2">Finish a test assignment to see it here.</p>
+        </div>
+        )
+    }
+
+    return (
+        <div className="bg-white p-6 rounded-xl shadow-lg shadow-slate-200/50 border border-slate-200">
+        <h2 className="text-xl font-semibold mb-4">Completed Reports</h2>
+        <div className="overflow-x-auto">
+            <table className="w-full text-left">
+            <thead className="border-b-2 border-slate-200">
+                <tr>
+                <th className="p-3 text-sm font-semibold text-slate-600">Project Name</th>
+                <th className="p-3 text-sm font-semibold text-slate-600">Assigned To</th>
+                <th className="p-3 text-sm font-semibold text-slate-600">Submitted At</th>
+                <th className="p-3 text-sm font-semibold text-slate-600">Status</th>
+                <th className="p-3 text-sm font-semibold text-slate-600"></th>
                 </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
+            </thead>
+            <tbody>
+                {completedReports.map(report => {
+                    const allItems = Object.values(report.checklist).flat();
+                    const passedCount = allItems.filter(i => i.status === 'Pass').length;
+                    const failedCount = allItems.filter(i => i.status === 'Fail').length;
+                    return (
+                        <tr key={report.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                        <td className="p-3 font-medium">{report.details.name}</td>
+                        <td className="p-3 text-slate-600">{report.details.assignedTo}</td>
+                        <td className="p-3 text-slate-600">{new Date(report.submittedAt).toLocaleDateString()}</td>
+                        <td className="p-3">
+                            <span className="text-green-600 font-medium">{passedCount} Passed</span>, <span className="text-red-600 font-medium">{failedCount} Failed</span>
+                        </td>
+                        <td className="p-3 text-right">
+                            <button onClick={() => onViewReport(report)} className="font-semibold text-violet-600 hover:text-violet-800">View</button>
+                        </td>
+                        </tr>
+                    )
+                })}
+            </tbody>
+            </table>
+        </div>
+        </div>
+    );
 };
