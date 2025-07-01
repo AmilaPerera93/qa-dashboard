@@ -3,8 +3,7 @@ import { FileText, Link, User, Server, Shield, Zap, DatabaseZap, Accessibility, 
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, onSnapshot, query, where, doc, updateDoc } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getAnalytics } from "firebase/analytics";
-import { useNavigate } from 'react-router-dom';
+ 
 //import React, { useState } from 'react';
 //import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
 
