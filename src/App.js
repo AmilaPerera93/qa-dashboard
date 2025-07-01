@@ -187,21 +187,46 @@ export default function App() {
       setView('viewReport');
   };
 
+  // const handleAddAssignment = async (newAssignment) => {
+  //   if (!db) {
+  //       alert("Database is not configured correctly.");
+  //       return;
+  //   }
+  //   try {
+  //       console.log("Creating assignment in Firestore...");
+  //       await addDoc(collection(db, `/artifacts/${firebaseConfig.projectId}/reports`), newAssignment);
+  //       console.log("Assignment created successfully!");
+  //       setView('dashboard');
+  //   } catch (error) {
+  //       console.error("Error creating assignment:", error);
+  //       alert("Failed to create assignment.");
+  //   }
+  // };
+
   const handleAddAssignment = async (newAssignment) => {
-    if (!db) {
-        alert("Database is not configured correctly.");
-        return;
-    }
-    try {
-        console.log("Creating assignment in Firestore...");
-        await addDoc(collection(db, `/artifacts/${firebaseConfig.projectId}/reports`), newAssignment);
-        console.log("Assignment created successfully!");
-        setView('dashboard');
-    } catch (error) {
-        console.error("Error creating assignment:", error);
-        alert("Failed to create assignment.");
-    }
-  };
+  if (!db) {
+    alert("Error: Firebase DB is not initialized.");
+    console.error("Firestore instance is undefined.");
+    return;
+  }
+
+  const collectionPath = `/artifacts/${firebaseConfig.projectId}/reports`;
+
+  try {
+    console.log("Adding assignment to:", collectionPath);
+
+    await addDoc(collection(db, collectionPath), newAssignment);
+
+    // Success feedback
+    alert("✅ Assignment created successfully!");
+    console.log("✅ Assignment created and stored.");
+
+    setView('dashboard');
+  } catch (error) {
+    console.error("❌ Error creating assignment:", error.message);
+    alert("❌ Failed to create assignment. Please check console.");
+  }
+};
 
   const handleUpdateAssignment = async (assignmentId, checklist) => {
     if (!db) {
