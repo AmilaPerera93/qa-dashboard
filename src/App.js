@@ -3,29 +3,6 @@ import { FileText, Link, User, Server, Shield, Zap, DatabaseZap, Accessibility, 
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, onSnapshot, query, where, doc, updateDoc } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
- 
-//import React, { useState } from 'react';
-//import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
-
-//import firebaseConfig from './firebaseConfig';
-// --- Firebase Configuration ---
-
-/*// For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
-  apiKey: "AIzaSyCzpYs-lsl9aySiPaXth2zw_epgv8pmA1Q",
-  authDomain: "ait-qa-tool.firebaseapp.com",
-  projectId: "ait-qa-tool",
-  storageBucket: "ait-qa-tool.firebasestorage.app",
-  messagingSenderId: "815363238873",
-  appId: "1:815363238873:web:73ad43b48a1a57dd8107c8",
-  measurementId: "G-2FP7F86KC2"
-};
-*/
-
-// Initialize Firebase
-
-//const app = initializeApp(firebaseConfig);
-//const analytics = getAnalytics(app);
 
 // --- Firebase Configuration ---
 // These variables are loaded from your .env file
@@ -53,7 +30,6 @@ if (firebaseConfig.apiKey) {
         console.error("Error initializing Firebase. Please check your configuration.", e);
     }
 }
- 
 
 // --- MOCK DATA & CONFIGURATION ---
 
@@ -217,6 +193,7 @@ export default function App() {
         return;
     }
     try {
+        console.log("Creating assignment in Firestore...");
         await addDoc(collection(db, `/artifacts/${firebaseConfig.projectId}/reports`), newAssignment);
         console.log("Assignment created successfully!");
         setView('dashboard');
@@ -233,6 +210,7 @@ export default function App() {
     }
     const reportRef = doc(db, `/artifacts/${firebaseConfig.projectId}/reports`, assignmentId);
     try {
+        console.log("Submitting report to Firestore...");
         await updateDoc(reportRef, {
             checklist,
             status: 'complete',
