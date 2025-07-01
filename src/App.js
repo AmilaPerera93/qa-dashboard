@@ -3,6 +3,30 @@ import { FileText, Link, User, Server, Shield, Zap, DatabaseZap, Accessibility, 
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, onSnapshot, query, where, doc, updateDoc } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getAnalytics } from "firebase/analytics";
+import { useNavigate } from 'react-router-dom';
+//import React, { useState } from 'react';
+//import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
+
+//import firebaseConfig from './firebaseConfig';
+// --- Firebase Configuration ---
+
+/*// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyCzpYs-lsl9aySiPaXth2zw_epgv8pmA1Q",
+  authDomain: "ait-qa-tool.firebaseapp.com",
+  projectId: "ait-qa-tool",
+  storageBucket: "ait-qa-tool.firebasestorage.app",
+  messagingSenderId: "815363238873",
+  appId: "1:815363238873:web:73ad43b48a1a57dd8107c8",
+  measurementId: "G-2FP7F86KC2"
+};
+*/
+
+// Initialize Firebase
+
+//const app = initializeApp(firebaseConfig);
+//const analytics = getAnalytics(app);
 
 // --- Firebase Configuration ---
 // These variables are loaded from your .env file
@@ -16,17 +40,21 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const auth = getAuth(app);
+let app;
+let db;
+let auth;
 
 // Only initialize if config is valid to prevent errors
 if (firebaseConfig.apiKey) {
-    app = initializeApp(firebaseConfig);
-    db = getFirestore(app);
-    auth = getAuth(app);
+    try {
+        app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+        auth = getAuth(app);
+    } catch (e) {
+        console.error("Error initializing Firebase. Please check your configuration.", e);
+    }
 }
-
+ 
 
 // --- MOCK DATA & CONFIGURATION ---
 
@@ -185,12 +213,13 @@ export default function App() {
   };
 
   const handleAddAssignment = async (newAssignment) => {
-    if (!db || appId === 'default-app-id') {
+    if (!db) {
         alert("Database is not configured correctly.");
         return;
     }
     try {
-        await addDoc(collection(db, `/artifacts/${appId}/public/data/reports`), newAssignment);
+        await addDoc(collection(db, `/artifacts/${firebaseConfig.projectId}/reports`), newAssignment);
+        console.log("Assignment created successfully!");
         setView('dashboard');
     } catch (error) {
         console.error("Error creating assignment:", error);
@@ -199,17 +228,18 @@ export default function App() {
   };
 
   const handleUpdateAssignment = async (assignmentId, checklist) => {
-    if (!db || appId === 'default-app-id') {
+    if (!db) {
         alert("Database is not configured correctly.");
         return;
     }
-    const reportRef = doc(db, `/artifacts/${appId}/public/data/reports`, assignmentId);
+    const reportRef = doc(db, `/artifacts/${firebaseConfig.projectId}/reports`, assignmentId);
     try {
         await updateDoc(reportRef, {
             checklist,
             status: 'complete',
             submittedAt: new Date().toISOString()
         });
+        console.log("Report submitted successfully!");
         setView('dashboard');
     } catch (error) {
         console.error("Error submitting report:", error);
@@ -222,7 +252,7 @@ export default function App() {
       return (
         <div className="text-center p-10 bg-white rounded-lg shadow-md">
             <h2 className="text-xl font-semibold text-red-600">Configuration Error</h2>
-            <p className="text-slate-600 mt-2">Firebase configuration is missing. Please check your setup.</p>
+            <p className="text-slate-600 mt-2">Firebase configuration is missing. Please create a .env file and add your project keys.</p>
         </div>
       );
     }
@@ -323,9 +353,9 @@ const MyDashboard = ({ currentUser, onPerformAssignment, setView }) => {
     const [assignments, setAssignments] = useState([]);
     
     useEffect(() => {
-        if (!db || appId === 'default-app-id') return;
+        if (!db) return;
         const assignmentsQuery = query(
-            collection(db, `/artifacts/${appId}/public/data/reports`),
+            collection(db, `/artifacts/${firebaseConfig.projectId}/reports`),
             where('status', '==', 'pending'),
             where('details.assignedTo', '==', currentUser)
         );
@@ -373,7 +403,7 @@ const MyDashboard = ({ currentUser, onPerformAssignment, setView }) => {
 const CreateAssignment = ({ onAddAssignment, setView }) => {
     const [details, setDetails] = useState({ name: '', url: '', assignedTo: '', environment: '' });
     
-    const handleCreate = async () => {
+    const handleCreate = () => {
         if (!details.name || !details.url || !details.assignedTo) {
           alert('Please fill out all fields.');
           return;
@@ -415,7 +445,7 @@ const PerformTest = ({ assignment, onUpdateAssignment, setView }) => {
         });
     };
 
-    const handleSubmit = async () => {
+    const handleSubmit = () => {
         onUpdateAssignment(assignment.id, checklist);
     };
 
@@ -664,9 +694,9 @@ const ReportsDashboard = ({ onViewReport }) => {
     const [completedReports, setCompletedReports] = useState([]);
 
     useEffect(() => {
-        if (!db || appId === 'default-app-id') return;
+        if (!db) return;
         const reportsQuery = query(
-            collection(db, `/artifacts/${appId}/public/data/reports`),
+            collection(db, `/artifacts/${firebaseConfig.projectId}/reports`),
             where('status', '==', 'complete')
         );
 
@@ -674,6 +704,8 @@ const ReportsDashboard = ({ onViewReport }) => {
             const fetchedReports = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             fetchedReports.sort((a,b) => new Date(b.submittedAt) - new Date(a.submittedAt));
             setCompletedReports(fetchedReports);
+        }, (error) => {
+            console.error("Error fetching reports: ", error);
         });
 
         return () => unsubscribe();
