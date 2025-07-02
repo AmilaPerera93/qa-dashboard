@@ -1,10 +1,10 @@
 // src/components/ReportsDashboard.jsx
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db, firebaseConfig } from '../firebase/firebaseConfig';
 import { Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { deleteDoc, doc } from 'firebase/firestore'; // Explicitly import deleteDoc and doc
+ 
 
 const ReportsDashboard = ({ onViewReport, onDeleteAssignment }) => {
   const [completedReports, setCompletedReports] = useState([]);
