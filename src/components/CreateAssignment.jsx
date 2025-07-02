@@ -3,8 +3,8 @@ import React, { useState } from 'react';
 import { ArrowLeft, PlusCircle } from 'lucide-react';
 import ProjectDetailsCard from './common/ProjectDetailsCard';
 import ChecklistSelector from './ChecklistSelector';
-import { initialChecklistState, checklistData } from '../utils/constants'; // Import checklistData
-import { addDoc, collection } from 'firebase/firestore'; // Import addDoc and collection
+import { checklistData } from '../utils/constants'; // Import checklistData
+//import { addDoc, collection } from 'firebase/firestore'; // Import addDoc and collection
 import { db, firebaseConfig } from '../firebase/firebaseConfig'; // Import db and firebaseConfig
 import { toast } from 'react-toastify';
 
