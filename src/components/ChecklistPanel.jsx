@@ -1,5 +1,5 @@
 // src/components/ChecklistPanel.jsx
-import React from 'react';
+//import React from 'react';
 import { priorities, statuses } from '../utils/constants';
 
 const ChecklistPanel = ({ phase, items, onChange, isReadOnly }) => {
