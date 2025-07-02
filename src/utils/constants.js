@@ -1,6 +1,6 @@
 // src/utils/constants.js
 
-import { FileText, Link, User, Server, Shield, Zap, DatabaseZap, Accessibility, BarChart, CheckSquare, List, DollarSign, Puzzle, Briefcase, FileCheck, FileX, Clock } from 'lucide-react';
+import { FileText,Shield, Zap, DatabaseZap, Accessibility, BarChart, DollarSign, Puzzle, Briefcase } from 'lucide-react';
 
 export const employees = ['Amila', 'Rashini', 'Janani', 'Buddhini', 'Bhanuka', 'Pramod', 'Adithya', 'Akash', 'Lasantha'];
 export const priorities = ['High', 'Medium', 'Low'];

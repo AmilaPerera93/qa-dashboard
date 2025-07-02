@@ -5,7 +5,7 @@ import ProjectDetailsCard from './common/ProjectDetailsCard';
 import ChecklistSelector from './ChecklistSelector';
 import { checklistData } from '../utils/constants'; // Import checklistData
 //import { addDoc, collection } from 'firebase/firestore'; // Import addDoc and collection
-import { db, firebaseConfig } from '../firebase/firebaseConfig'; // Import db and firebaseConfig
+//import { db, firebaseConfig } from '../firebase/firebaseConfig'; // Import db and firebaseConfig
 import { toast } from 'react-toastify';
 
 
